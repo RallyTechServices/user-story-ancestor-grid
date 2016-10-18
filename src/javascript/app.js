@@ -3,10 +3,6 @@ Ext.define("user-story-ancestor-grid", {
     componentCls: 'app',
     logger: new Rally.technicalservices.Logger(),
     defaults: { margin: 10 },
-    items: [
-        {xtype:'container',itemId:'message_box',tpl:'Hello, <tpl>{_refObjectName}</tpl>'},
-        {xtype:'container',itemId:'display_box'}
-    ],
 
     integrationHeaders : {
         name : "user-story-ancestor-grid"
@@ -125,7 +121,7 @@ Ext.define("user-story-ancestor-grid", {
                 var featureObj = featureHash[objID];
                 for (var i=1; i<this.portfolioItemTypeDefs.length; i++){
                     var name = this.portfolioItemTypeDefs[i].Name.toLowerCase();
-                    if (featureObj[name]){
+                    if (featureObj && featureObj[name]){
                         record.set(name, featureObj[name]);
                     } else {
                         record.set(name, null);
@@ -196,7 +192,6 @@ Ext.define("user-story-ancestor-grid", {
                     var parentObj = hash[parent] || null,
                         parentName = hash[parent] && hash[parent]._type.replace('portfolioitem/','');
 
-
                     if (featureHash[objID]){
                         featureHash[objID][parentName] = parentObj;
                         parent = parentObj && parentObj.Parent && parentObj.Parent.ObjectID || null;
@@ -214,10 +209,13 @@ Ext.define("user-story-ancestor-grid", {
             var type = this.getPortfolioItemTypePaths()[i];
 
             var filterProperties = ['ObjectID'];
+
             for (var j=0; j<i; j++){
                 filterProperties.unshift('Children');
             }
+
             var filterProperty = filterProperties.join('.');
+
             var filters = _.map(featureOids, function(f){
                 return {
                     property: filterProperty,
@@ -226,6 +224,7 @@ Ext.define("user-story-ancestor-grid", {
             });
             filters = Rally.data.wsapi.Filter.or(filters);
             this.logger.log('type', type, filters.toString());
+
             promises.push(this.fetchWsapiRecords({
                 model: type,
                 fetch: ['FormattedID','Name','Parent','ObjectID'],
@@ -236,14 +235,14 @@ Ext.define("user-story-ancestor-grid", {
                 filters: filters
             }));
         }
-
+        this.setLoading('Loading Ancestor data...');
         Deft.Promise.all(promises).then({
             success: function(results){
                 deferred.resolve(results);
             },
             failure: this.showErrorNotification,
             scope: this
-        });
+        }).always(function(){ this.setLoading(false);},this);
         return deferred;
 
 
@@ -298,9 +297,12 @@ Ext.define("user-story-ancestor-grid", {
         Ext.Array.each(records, function(r){
             var feature = r.get(featureName);
             if (feature && !featureHash[feature.ObjectID]){
-                featureOids.push(feature.ObjectID);
+                if (!Ext.Array.contains(featureOids,feature.ObjectID)){
+                    featureOids.push(feature.ObjectID);
+                }
             }
         }, this);
+        this.logger.log('featureOids', featureOids);
 
         if (featureOids.length > 0){
             this.fetchAncestors(featureOids).then({
@@ -406,10 +408,137 @@ Ext.define("user-story-ancestor-grid", {
                 }
             }];
     },
-    _export: function() {
-        window.location = Rally.ui.gridboard.Export.buildCsvExportUrl(
-            this.down('rallygridboard').getGridOrBoard());
+    getExportFilters: function(){
+        var filters = this.getQueryFilter(),
+            gridFilters = this.down('rallygridboard').currentCustomFilter.filters || [];
+
+        if (filters.length > 0 && gridFilters.length > 0){
+            filters = filters.and(gridFilters);
+        } else {
+            if (gridFilters.length > 0){
+               filters = gridFilters;
+            }
+        }
+        this.logger.log('getExportFilters', filters.toString());
+        return filters;
     },
+    updateExportStories: function(records){
+        var deferred = Ext.create('Deft.Deferred');
+
+        this.logger.log('updateExportStories',records);
+
+        if (records.length === 0 || records[0].get('_type') !== 'hierarchicalrequirement'){
+            deferred.resolve([]);
+        }
+        var featureName = this.getFeatureName(),
+            featureHash = this.getFeatureAncestorHash(),
+            featureOids = [];
+
+        Ext.Array.each(records, function(r){
+            var feature = r.get(featureName);
+            if (feature && !featureHash[feature.ObjectID]){
+                if (!Ext.Array.contains(featureOids,feature.ObjectID)){
+                    featureOids.push(feature.ObjectID);
+                }
+
+            }
+        }, this);
+        this.logger.log('featureOids', featureOids);
+
+        if (featureOids.length > 0) {
+            this.fetchAncestors(featureOids).then({
+                success: function (results) {
+                    this.updateFeatureHashWithWsapiRecords(results);
+                    this.setAncestors(records);
+                    deferred.resolve(records);
+                },
+                failure: function (msg) {
+                    deferred.reject(msg);
+                },
+                scope: this
+            });
+        }else {
+            this.setAncestors(records);
+            deferred.resolve(records);
+        }
+
+        return deferred;
+    },
+    _export: function() {
+
+        var filters = this.getExportFilters();
+
+        var columnCfgs = this.down('rallytreegrid').columns,
+            additionalFields = _.filter(columnCfgs, function(c){ return c.text !== 'Rank' && (c.xtype === 'rallyfieldcolumn' || c.xtype === "treecolumn"); }),
+            derivedFields = this.getDerivedColumns(),
+            columns = Ext.Array.merge(additionalFields, derivedFields);
+
+        var fetch = _.pluck(additionalFields, 'dataIndex');
+        fetch.push('ObjectID');
+        if (!Ext.Array.contains(fetch, this.getFeatureName())){
+            fetch.push(this.getFeatureName());
+        }
+        this.setLoading('Loading data to export...');
+        this.logger.log('columns', columnCfgs);
+        this.fetchWsapiRecords({
+            model: 'HierarchicalRequirement',
+            fetch: fetch,
+            filters: filters,
+            limit: 'Infinity'
+        }).then({
+            success: this.updateExportStories,
+            scope: this
+        }).then({
+            success: function(records){
+                var csv = this.getExportCSV(records, columns);
+                var filename = Ext.String.format("export-{0}.csv",Ext.Date.format(new Date(),"Y-m-d-h-i-s"));
+                CArABU.technicalservices.FileUtilities.saveCSVToFile(csv, filename);
+            },
+            failure: this.showErrorNotification,
+            scope: this
+        }).always(function(){ this.setLoading(false); }, this);
+    },
+    getExportCSV: function(records, columns){
+        var standardColumns = _.filter(columns, function(c){ return c.dataIndex || null; }),
+            headers = _.map(standardColumns, function(c){ if (c.text === "ID") {return "Formatted ID"; } return c.text; }),
+            fetchList = _.map(standardColumns, function(c){ return c.dataIndex; }),
+            derivedColumns = this.getDerivedColumns();
+
+        this.logger.log('getExportCSV', headers, fetchList);
+
+        Ext.Array.each(derivedColumns, function(d){
+            headers.push(d.text);
+        });
+
+        var csv = [headers.join(',')];
+
+        for (var i = 0; i < records.length; i++){
+            var row = [],
+                record = records[i];
+
+            for (var j = 0; j < fetchList.length; j++){
+                var val = record.get(fetchList[j]);
+                if (Ext.isObject(val)){
+                    val = val._refObjectName;
+                }
+                row.push(val || "");
+            }
+
+            Ext.Array.each(derivedColumns, function(d){
+                var ancestor = record.get(d.ancestorName);
+                if (ancestor){
+                    row.push(Ext.String.format("{0}: {1}", ancestor.FormattedID, ancestor.Name));
+                } else {
+                    row.push("");
+                }
+            });
+
+            row = _.map(row, function(v){ return Ext.String.format("\"{0}\"", v.toString().replace(/"/g, "\"\""));});
+            csv.push(row.join(","));
+        }
+        return csv.join("\r\n");
+    },
+
     getColumnConfigs: function(){
         var cols = [{
             dataIndex: 'Name',
