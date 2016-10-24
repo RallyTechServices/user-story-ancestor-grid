@@ -113,6 +113,7 @@ Ext.define("user-story-ancestor-grid", {
     setAncestors: function(records){
         var featureHash = this.getFeatureAncestorHash(),
             featureName = this.getFeatureName();
+
         for (var j=0; j<records.length; j++){
             var record = records[j],
                 feature = record.get(featureName);
@@ -120,7 +121,8 @@ Ext.define("user-story-ancestor-grid", {
                 var objID = feature.ObjectID;
                 var featureObj = featureHash[objID];
                 for (var i=1; i<this.portfolioItemTypeDefs.length; i++){
-                    var name = this.portfolioItemTypeDefs[i].Name.toLowerCase();
+                    var name = this.portfolioItemTypeDefs[i].TypePath.toLowerCase().replace('portfolioitem/','');
+
                     if (featureObj && featureObj[name]){
                         record.set(name, featureObj[name]);
                     } else {
@@ -130,34 +132,9 @@ Ext.define("user-story-ancestor-grid", {
             }
         }
     },
-    //updateFeatureHash: function(snapshots, portfolioItems){
-    //    var hash = {};
-    //    Ext.Array.each(portfolioItems, function(pi){
-    //        hash[pi.get('ObjectID')] = pi.getData();
-    //    });
-    //
-    //    var featureHash = this.getFeatureAncestorHash();
-    //    Ext.Array.each(snapshots, function(s){
-    //        var itemHierarchy = s.get('_ItemHierarchy'),
-    //            objID = s.get('ObjectID');
-    //        Ext.Array.each(itemHierarchy, function(i){
-    //
-    //            var ancestor = hash[i],
-    //                ancestorName = hash[i]._type.replace('portfolioitem/','');
-    //            if (!featureHash[objID]){
-    //                featureHash[objID] = hash[objID];
-    //            }
-    //            if (featureHash[objID]){
-    //                featureHash[objID][ancestorName] = ancestor;
-    //            }
-    //
-    //        });
-    //
-    //    });
-    //
-    //    this.logger.log('updateFeatureHash', featureHash);
-    //},
+
     updateFeatureHashWithWsapiRecords: function(results){
+
         var hash = {},
             features = [],
             featureTypePath = this.getPortfolioItemTypePaths()[0].toLowerCase(),
@@ -174,7 +151,7 @@ Ext.define("user-story-ancestor-grid", {
             });
         });
 
-
+        this.logger.log('updateFeatureHashWithWsapiRecords', ancestorNames, results);
         var featureHash = this.getFeatureAncestorHash();
         Ext.Array.each(features, function(s){
 
@@ -558,7 +535,7 @@ Ext.define("user-story-ancestor-grid", {
         //Ext.Array.each(this.portfolioItemTypeDefs, function(p){
         for (var i = 1; i< this.portfolioItemTypeDefs.length; i++){
 
-            var name = this.portfolioItemTypeDefs[i].Name.toLowerCase();
+            var name = this.portfolioItemTypeDefs[i].TypePath.toLowerCase().replace('portfolioitem/','');
 
             cols.push({
                // dataIndex: name,
