@@ -42,3 +42,24 @@ Ext.override(Rally.ui.grid.TreeGrid, {
         }
     }
 });
+
+Ext.override(Rally.ui.inlinefilter.AdvancedFilterRows, {
+    _getRowConfig: function() {
+        return Ext.merge({
+            xtype: 'rallyancestorfilterrow',
+            autoExpand: this.autoExpand,
+            model: this.model,
+            context: this.context,
+            focusPropertyField: false,
+            operatorFieldConfig: this.operatorFieldConfig,
+            propertyFieldConfig: this.propertyFieldConfig,
+            listeners: {
+                addrow: function() {
+                    this._addRow(true);
+                },
+                removerow: this._removeRow,
+                scope: this
+            }
+        }, this.rowConfig);
+    }
+});
