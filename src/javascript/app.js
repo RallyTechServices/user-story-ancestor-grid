@@ -224,43 +224,7 @@ Ext.define("user-story-ancestor-grid", {
 
 
     },
-    //fetchPortfolioItems: function(snapshots){
-    //    var deferred = Ext.create('Deft.Deferred');
-    //
-    //    var piOids = [];
-    //    for (var i=0; i<snapshots.length; i++){
-    //        var snap = snapshots[i].getData();
-    //        piOids = Ext.Array.merge(piOids, snap._ItemHierarchy);
-    //    }
-    //
-    //    var filters = _.map(piOids, function(pi){
-    //        return {
-    //            property: 'ObjectID',
-    //            value: pi
-    //        };
-    //    });
-    //
-    //    filters = Rally.data.wsapi.Filter.or(filters);
-    //
-    //    Ext.create('Rally.data.wsapi.artifact.Store',{
-    //        models: this.getPortfolioItemTypePaths(),
-    //        fetch: ['FormattedID','Name','Parent','ObjectID'],
-    //        filters: filters,
-    //        enablePostGet: true,
-    //        limit: Infinity,
-    //        context: {project: null}
-    //    }).load({
-    //        callback: function(records, operation){
-    //            if (operation.wasSuccessful()){
-    //                deferred.resolve(records);
-    //            } else {
-    //                deferred.reject("Failed to load portfolio items: " + operation.error.errors.join(','));
-    //            }
-    //        }
-    //    });
-    //
-    //    return deferred;
-    //},
+
     updateStories: function(store, node, records, operation){
         this.logger.log('updateStories',records, operation);
 
@@ -290,28 +254,6 @@ Ext.define("user-story-ancestor-grid", {
                 failure: this.showErrorNotification,
                 scope: this
             });
-            //this.fetchSnapshots({
-            //    find: {
-            //        _TypeHierarchy: {$in: this.getPortfolioItemTypePaths() },
-            //        __At: "current",
-            //        _ItemHierarchy: {$in: featureOids}
-            //    },
-            //    fetch: ['ObjectId','FormattedID','Name','Parent','_ItemHierarchy'],
-            //    limit: Infinity
-            //}).then({
-            //    success: function(snapshots){
-            //        this.fetchPortfolioItems(snapshots).then({
-            //            success: function(portfolioItems){
-            //                this.updateFeatureHash(snapshots, portfolioItems);
-            //                this.setAncestors(records);
-            //            },
-            //            failure: this.showErrorNotification,
-            //            scope: this
-            //        });
-            //    },
-            //    failure: this.showErrorNotification,
-            //    scope: this
-            //});
         } else {
             this.setAncestors(records)
         }
@@ -367,7 +309,13 @@ Ext.define("user-story-ancestor-grid", {
                                 'Owner',
                                 'ModelType'
                             ]
+                        },
+                        advancedFilterPanelConfig: {
+                            advancedFilterRowsConfig: {
+                                flex: 2
+                            }
                         }
+
                     }
                 }
             }, {

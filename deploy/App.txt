@@ -3,12 +3,12 @@
 <head>
     <title>User Story Ancestor Grid</title>
     <!--  (c) 2016 CA Technologies.  All Rights Reserved. -->
-    <!--  Build Date: Mon Oct 24 2016 10:29:58 GMT-0600 (MDT) -->
+    <!--  Build Date: Mon May 01 2017 08:47:01 GMT-0600 (MDT) -->
     
     <script type="text/javascript">
-        var APP_BUILD_DATE = "Mon Oct 24 2016 10:29:58 GMT-0600 (MDT)";
-        var BUILDER = "kcorkan";
-        var CHECKSUM = 22277750987;
+        var APP_BUILD_DATE = "Mon May 01 2017 08:47:01 GMT-0600 (MDT)";
+        var BUILDER = "corkr03";
+        var CHECKSUM = 45952946674;
     </script>
     
     <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
@@ -203,6 +203,276 @@ Ext.define('Rally.technicalservices.Logger',{
 
 });
 
+    Ext.define('RallyTechServices.inlinefilter.AncestorFilterRow', {
+        alias: 'widget.rallyancestorfilterrow',
+        extend: 'Rally.ui.inlinefilter.AdvancedFilterRow',
+
+        layout: 'hbox',
+        bubbleEvents: ['filterchange'],
+        cls: 'advanced-filter-row',
+        flex: 2,
+
+        config: {
+            context: undefined,
+            model: undefined,
+            autoExpand: false,
+            name: undefined,
+            operator: undefined,
+            rawValue: undefined,
+            addButtonEnabled: false,
+            removeButtonEnabled: false,
+            ancestorFieldConfig: {},
+            propertyFieldConfig: {},
+            operatorFieldConfig: {},
+            focusPropertyField: false
+        },
+
+        //constructor: function(config) {
+        //    console.log('config', config);
+        //    this.mergeConfig(config);
+        //    this.callParent([this.config]);
+        //},
+
+        isValid: function() {
+            return this._hasPropertySelected() && this._hasOperatorSelected() && this._valueFieldIsValid();
+        },
+        _getFeatureName: function(){
+            if (!this.featureName){
+                var records = this.ancestorField && this.ancestorField.getStore() && this.ancestorField.getStore().getRange();
+                Ext.Array.each(records, function(r){
+                    if (r.get('Ordinal') === 0){
+                        var typePath = r.get('TypePath');
+                        this.featureName = typePath.replace('PortfolioItem/','');
+                    }
+                }, this);
+            }
+            return this.featureName;
+        },
+        getFilter: function() {
+            if (this.isValid()) {
+                var ancestorRecord = this.ancestorField.getRecord(),
+                    property = this.propertyField.lastValue,
+                    operator = this.operatorField.lastValue,
+                    valueField = this.valueField;
+
+                var lastValue = Ext.isEmpty(valueField.lastValue) ? null : valueField.lastValue;
+
+                var isRefUri = Rally.util.Ref.isRefUri(lastValue);
+                var isRefOid = _.isNumber(Rally.util.Ref.getOidFromRef(lastValue));
+                if (isRefUri && isRefOid && valueField.valueField === '_ref' && valueField.noEntryValue !== lastValue) {
+                    var record = valueField.getRecord();
+                    if (record) {
+                        var uuidRef = record.get('_uuidRef');
+                        if (uuidRef) {
+                            lastValue = uuidRef;
+                        }
+                    }
+                }
+
+                if (ancestorRecord && ancestorRecord.get('TypePath')){
+                    var ordinal = ancestorRecord.get('Ordinal');
+                    var propertyPrefix = [this._getFeatureName()];
+
+                    if (ordinal === 0){
+                        propertyPrefix.push(property);
+                    } else {
+                        for (var i=0; i<ordinal; i++){
+                            propertyPrefix.push('Parent');
+                        }
+                        propertyPrefix.push(property);
+                    }
+                    property = propertyPrefix.join('.');
+                }
+
+                var filter = Rally.data.wsapi.Filter.fromExtFilter({
+                    property: property,
+                    operator: operator,
+                    value: lastValue
+                });
+
+                console.log('filter', filter.toString());
+                if (valueField.allowNoEntry && valueField.noEntryValue === lastValue) {
+                    filter.value = null;
+                }
+
+                Ext.apply(filter, {
+                    name: property,
+                    rawValue: lastValue,
+                    filterIndex: this.filterIndex
+                });
+
+                return filter;
+            }
+        },
+
+        _fixPropertyFieldInIE: function() {
+            if (Ext.isIE10m && this.propertyField.inputEl) {
+                this.propertyField.setValue(this.propertyField.getValue());
+            }
+        },
+        _onTypeAncestorStoreLoad: function(store, records){
+
+            var ancestor = this.name.split(".");
+            var idx = undefined,
+                thisVal = null;
+
+            if (ancestor.length > 1){
+                idx = ancestor.length - 2;
+            }
+
+            Ext.Array.each(records, function(r){
+               if (r.get('Ordinal') === 0){
+                   var typePath = r.get('TypePath');
+                   this.featureName = typePath.replace('PortfolioItem/','');
+               }
+
+                if (idx === r.get('Ordinal')){
+                    thisVal = r.get('TypePath');
+                    return false;
+                }
+
+           }, this);
+
+           if (thisVal){
+               this.originalProperty = ancestor.slice(-1)[0];
+               this.property = ancestor.slice(-1)[0];
+               this.ancestorField.setValue(thisVal);
+               this._onAncestorSelect(this.ancestorField);
+           }
+
+        },
+        _createAncestorField: function(){
+
+            this.ancestorField = Ext.widget(Ext.merge({
+                xtype: 'rallycombobox',
+                itemId: 'ancestorField',
+                autoExpand: this.autoExpand,
+                storeConfig: {
+                    model: 'TypeDefinition',
+                    fetch: ['TypePath','DisplayName','Ordinal','Name'],
+                    filters: [{
+                        property: 'TypePath',
+                        operator: 'contains',
+                        value: 'PortfolioItem/'
+                    }],
+                    autoLoad: true,
+                    listeners: {
+                        load: this._onTypeAncestorStoreLoad,
+                        scope: this
+                    },
+                    remoteFilter: true
+                },
+                allowNoEntry: true,
+                cls: 'indexed-field property-field',
+                width: 100,
+                labelAlign: 'top',
+                fieldLabel: 'OBJECT',
+                valueField: 'TypePath',
+                displayField: 'Name',
+                labelSeparator: '',
+                noEntryText: 'User Story',
+                //value: this.ancestorType,
+                //context: this.context,
+                listeners: {
+                    select: this._onAncestorSelect,
+                   // specialkey: this._onPropertySpecialKey,
+                    scope: this
+                }
+            }, this.ancestorFieldConfig));
+        },
+        _createIndexLabel: function() {
+            this.indexLabel = Ext.widget({
+                xtype: 'label',
+                itemId: 'indexLabel',
+                cls: 'index-label',
+                hidden: true,
+                listeners: {
+                    el: {
+                        click: function () {
+                            this.propertyField.expand();
+                        },
+                        scope: this
+                    },
+                    afterrender: {
+                        fn: function() {
+                            this.indexLabel.el.show();
+                        },
+                        scope: this,
+                        single: true
+                    }
+                },
+                text: this._getFilterIndexText(this.filterIndex)
+            });
+        },
+
+        _getItems: function() {
+            this._createAddRowButton();
+            this._createRemoveRowButton();
+            this._createIndexLabel();
+            this._createAncestorField();
+            this._createPropertyField();
+            this._createOperatorField();
+            this._createValueField();
+
+            return [
+                this.addRowButton,
+                this.removeRowButton,
+                this.indexLabel,
+                this.ancestorField,
+                this.propertyField,
+                this.operatorField,
+                this.valueField
+            ];
+        },
+
+        _hasAncestorSelected: function() {
+            return !!this.ancestorField.getValue();
+        },
+
+        _replacePropertyField: function() {
+            var deferred = new Deft.Deferred();
+            delete this.property;
+            if (this.originalProperty){
+                this.property = this.originalProperty;
+                this.originalProperty = null;
+            }
+            this.propertyField.destroy();
+            this._createPropertyField();
+            this.propertyField.store.on('load', function() {
+                deferred.resolve();
+            });
+            this.add(this.propertyField);
+            return deferred.promise;
+        },
+        _onAncestorSelect: function() {
+            //delete this.ancestorType;
+
+            var type = this.ancestorField.getValue() || 'HierarchicalRequirement';
+            Rally.data.ModelFactory.getModel({
+                type: type,
+                success: function(model) {
+                    this.model = model;
+                    Deft.Promise.all([
+                        this._replacePropertyField(),
+                        this._replaceOperatorField(),
+                        this._replaceValueField()
+                    ]).then({
+                        success: function() {
+                            this._applyFilters();
+                            this.propertyField.focus(false, 200);
+                        },
+                        scope: this
+                    });
+                },
+                scope: this
+            });
+        },
+        _valueIsAboutToChange: function(combo) {
+            var picker = combo.getPicker();
+            return picker.highlightedItem && picker.getRecord(picker.highlightedItem).get(combo.getValueField()) !== combo.getValue();
+        }
+    });
+
 Ext.define('CArABU.technicalservices.AncestorTemplateColumn', {
     extend: 'Ext.grid.column.Template',
     alias: ['widget.ancestortemplatecolumn'],
@@ -319,6 +589,247 @@ Ext.define('CArABU.technicalservices.FileUtilities',{
 });
 
 
+Ext.override(Rally.ui.inlinefilter.InlineFilterPanel, {
+        minHeight: 46,
+        padding: '8px 0 0 0',
+        bodyPadding: '7px 5px 5px 5px',
+        collapseDirection: 'top',
+        collapsible: true,
+        animCollapse: false,
+
+        config: {
+            inline: true,
+            collapsed: true,
+            anchorTargetCmp: undefined,
+            model: undefined,
+            context: undefined,
+            quickFilterPanelConfig: {
+                initialFilters: []
+            },
+            advancedFilterPanelConfig: {
+                advancedFilterRowsConfig: {},
+                matchTypeConfig: {
+                    value: 'AND'
+                }
+            }
+        },
+
+        getAdvancedCollapsed: function() {
+            return !!this.advancedFilterPanel.collapsed;
+        },
+
+        getTypes: function() {
+            return this.quickFilterPanel.getTypes();
+        },
+
+        getTypesFilter: function() {
+            return this.quickFilterPanel.getTypesFilter();
+        },
+
+        getFilters: function() {
+            return [].concat(this.getQuickFilters()).concat(this.getAdvancedFilters());
+        },
+
+        getQuickFilters: function() {
+            return this.quickFilterPanel.getFilters();
+        },
+
+        getAdvancedFilters: function() {
+            return this.advancedFilterPanel.getFilters();
+        },
+
+        getCustomFilterCondition: function() {
+            return this.advancedFilterPanel.getCustomFilterCondition();
+        },
+
+        getMatchType: function() {
+            return this.advancedFilterPanel.getMatchType();
+        },
+
+        onDestroy: function() {
+            _.invoke(_.compact([
+                this.chevronAligner,
+                this.toggleAdvancedButtonRelayedEvents
+            ]), 'destroy');
+            this.callParent(arguments);
+        },
+
+        onResize: function(width, height, oldWidth, oldHeight) {
+            this.callParent(arguments);
+            this._alignChevron();
+            this.fireEvent('inlinefilterresize', this, height, oldHeight);
+        },
+
+        afterRender: function() {
+            this.callParent(arguments);
+            this.on('afterfilterchange', this._alignChevron, this);
+        },
+
+        validateCustomFilterCondition: function() {
+            return this.advancedFilterPanel.validateCustomFilterCondition();
+        },
+
+        _onExpand: function(cmp) {
+            if (cmp === this) {
+                this.quickFilterPanel.focusFirstField();
+            }
+        },
+
+        _onBeforeCollapse: function(cmp) {
+            this._removeInvalidFilters();
+            if (Ext.isIE10m && cmp === this) {
+                this.focus();
+            }
+        },
+
+        _removeInvalidFilters: function() {
+            this.advancedFilterPanel.removeInvalidRows();
+            this.quickFilterPanel.clearInvalidFields();
+        },
+
+        _getItems: function() {
+            this._createCloseButton();
+            this._createQuickFilterPanel();
+            this._createAdvancedFilterPanel();
+            this.toggleAdvancedButtonRelayedEvents = this.quickFilterPanel.toggleAdvancedButton.relayEvents(this.advancedFilterPanel, ['collapse', 'expand', 'filterchange'], 'advanced');
+
+            return [
+                this.closeButton,
+                this.quickFilterPanel,
+                this.advancedFilterPanel
+            ];
+        },
+
+        _createCloseButton: function() {
+            this.closeButton = Ext.widget({
+                xtype: 'rallybutton',
+                cls: 'inline-filter-panel-close icon-cross',
+                height: 18,
+                userAction: 'Close (X) filter panel clicked',
+                listeners: {
+                    click: function() {
+                        this.collapse();
+                    },
+                    scope: this
+                }
+            });
+        },
+
+        _createQuickFilterPanel: function() {
+            this.quickFilterPanel = Ext.widget(Ext.merge({
+                xtype: 'rallyquickfilterpanel',
+                autoExpand: !Ext.isIE,
+                model: this.model,
+                context: this.context,
+                toggleAdvancedButtonConfig: {
+                    advancedCollapsed: this.advancedFilterPanelConfig.collapsed
+                },
+                listeners: {
+                    toggleadvanced: this._onToggleAdvanced,
+                    quickfilterchange: this._onQuickFilterChange,
+                    scope: this
+                }
+            }, this.quickFilterPanelConfig));
+        },
+
+        _createAdvancedFilterPanel: function() {
+            var filterStartIndex = this._getFilterStartIndex(),
+                matchTypeConfig = this.advancedFilterPanelConfig.matchTypeConfig,
+                isMatchTypeCustom = matchTypeConfig.value === 'CUSTOM';
+
+            this.advancedFilterPanel = Ext.widget(Ext.merge({
+                xtype: 'rallyadvancedfilterpanel',
+                customFilterConditionConfig: {
+                    hidden: !isMatchTypeCustom,
+                    maxWidth: 753,
+                    width: '50%',
+                    padding: '0 0 0 47px'
+                },
+                advancedFilterRowsConfig: {
+                    autoExpand: !Ext.isIE,
+                    model: this.model,
+                    context: this.context,
+                    filterStartIndex: filterStartIndex,
+                    maxWidth: 800,
+                    width: '50%',
+                    padding: 0
+                },
+                matchTypeConfig: {
+                    autoExpand: !Ext.isIE
+                },
+                listeners: {
+                    matchtypechange: this._onMatchTypeChange,
+                    scope: this
+                }
+            }, this.advancedFilterPanelConfig));
+        },
+
+        _getFilterStartIndex: function() {
+            return this.quickFilterPanel.fields.length + 1;
+        },
+
+        _onToggleAdvanced: function(button) {
+            this.advancedFilterPanel.toggleCollapse();
+            if (Ext.isIE || Ext.isGecko) {
+                button.focus();
+            }
+        },
+
+        _alignChevron: function() {
+            this._ensureChevron();
+            if (!this.collapsed && this.anchorTargetCmp.el) {
+                this.chevron.alignTo(this.anchorTargetCmp.el, 't-b', [0, 4]);
+                this.chevron.show();
+                this.chevronAligner.start();
+            } else {
+                this.chevron.hide();
+                this.chevronAligner.stop();
+            }
+        },
+
+        _ensureChevron: function() {
+            if (!this.chevron && this.el) {
+                this.chevron = this.el.createChild({
+                    cls: 'chevron-up inline-filter-chevron'
+                });
+
+                this.chevronAligner = Ext.TaskManager.newTask({
+                    run: function() {
+                        if (!this.collapsed && this.anchorTargetCmp.el) {
+                            var x = this.anchorTargetCmp.el.getX();
+                            if (x !== this.lastX) {
+                                this.lastX = x;
+                                this._alignChevron();
+                            }
+                        }
+                    },
+                    scope: this,
+                    interval: 250
+                });
+            }
+        },
+
+        _onMatchTypeChange: function(matchType) {
+            this.quickFilterPanel.updateFilterIndices(matchType.getValue());
+        },
+
+        clear: function() {
+            this.suspendEvents(false);
+            this.suspendLayouts();
+            this.quickFilterPanel.clear();
+            this.advancedFilterPanel.clear();
+            this.resumeEvents();
+            this.resumeLayouts(false);
+            this.updateLayout();
+            this.fireEvent('filterchange', this);
+        },
+
+        _onQuickFilterChange: function() {
+            this.quickFilterPanel.updateFilterIndices();
+            this.advancedFilterPanel.updateFilterIndices(this._getFilterStartIndex());
+            this.fireEvent('filterchange', this);
+        }
+    });
 Ext.override(Rally.ui.grid.TreeGrid, {
     _mergeColumnConfigs: function(newColumns, oldColumns) {
 
@@ -361,6 +872,27 @@ Ext.override(Rally.ui.grid.TreeGrid, {
         } else {
             this.columnCfgs = columns;
         }
+    }
+});
+
+Ext.override(Rally.ui.inlinefilter.AdvancedFilterRows, {
+    _getRowConfig: function() {
+        return Ext.merge({
+            xtype: 'rallyancestorfilterrow',
+            autoExpand: this.autoExpand,
+            model: this.model,
+            context: this.context,
+            focusPropertyField: false,
+            operatorFieldConfig: this.operatorFieldConfig,
+            propertyFieldConfig: this.propertyFieldConfig,
+            listeners: {
+                addrow: function() {
+                    this._addRow(true);
+                },
+                removerow: this._removeRow,
+                scope: this
+            }
+        }, this.rowConfig);
     }
 });
 
@@ -590,43 +1122,7 @@ Ext.define("user-story-ancestor-grid", {
 
 
     },
-    //fetchPortfolioItems: function(snapshots){
-    //    var deferred = Ext.create('Deft.Deferred');
-    //
-    //    var piOids = [];
-    //    for (var i=0; i<snapshots.length; i++){
-    //        var snap = snapshots[i].getData();
-    //        piOids = Ext.Array.merge(piOids, snap._ItemHierarchy);
-    //    }
-    //
-    //    var filters = _.map(piOids, function(pi){
-    //        return {
-    //            property: 'ObjectID',
-    //            value: pi
-    //        };
-    //    });
-    //
-    //    filters = Rally.data.wsapi.Filter.or(filters);
-    //
-    //    Ext.create('Rally.data.wsapi.artifact.Store',{
-    //        models: this.getPortfolioItemTypePaths(),
-    //        fetch: ['FormattedID','Name','Parent','ObjectID'],
-    //        filters: filters,
-    //        enablePostGet: true,
-    //        limit: Infinity,
-    //        context: {project: null}
-    //    }).load({
-    //        callback: function(records, operation){
-    //            if (operation.wasSuccessful()){
-    //                deferred.resolve(records);
-    //            } else {
-    //                deferred.reject("Failed to load portfolio items: " + operation.error.errors.join(','));
-    //            }
-    //        }
-    //    });
-    //
-    //    return deferred;
-    //},
+
     updateStories: function(store, node, records, operation){
         this.logger.log('updateStories',records, operation);
 
@@ -656,28 +1152,6 @@ Ext.define("user-story-ancestor-grid", {
                 failure: this.showErrorNotification,
                 scope: this
             });
-            //this.fetchSnapshots({
-            //    find: {
-            //        _TypeHierarchy: {$in: this.getPortfolioItemTypePaths() },
-            //        __At: "current",
-            //        _ItemHierarchy: {$in: featureOids}
-            //    },
-            //    fetch: ['ObjectId','FormattedID','Name','Parent','_ItemHierarchy'],
-            //    limit: Infinity
-            //}).then({
-            //    success: function(snapshots){
-            //        this.fetchPortfolioItems(snapshots).then({
-            //            success: function(portfolioItems){
-            //                this.updateFeatureHash(snapshots, portfolioItems);
-            //                this.setAncestors(records);
-            //            },
-            //            failure: this.showErrorNotification,
-            //            scope: this
-            //        });
-            //    },
-            //    failure: this.showErrorNotification,
-            //    scope: this
-            //});
         } else {
             this.setAncestors(records)
         }
@@ -733,7 +1207,13 @@ Ext.define("user-story-ancestor-grid", {
                                 'Owner',
                                 'ModelType'
                             ]
+                        },
+                        advancedFilterPanelConfig: {
+                            advancedFilterRowsConfig: {
+                                flex: 2
+                            }
                         }
+
                     }
                 }
             }, {
