@@ -3,12 +3,12 @@
 <head>
     <title>User Story Ancestor Grid</title>
     <!--  (c) 2016 CA Technologies.  All Rights Reserved. -->
-    <!--  Build Date: Tue May 02 2017 12:54:35 GMT-0600 (MDT) -->
+    <!--  Build Date: Tue May 02 2017 12:55:31 GMT-0600 (MDT) -->
     
     <script type="text/javascript">
-        var APP_BUILD_DATE = "Tue May 02 2017 12:54:35 GMT-0600 (MDT)";
+        var APP_BUILD_DATE = "Tue May 02 2017 12:55:31 GMT-0600 (MDT)";
         var BUILDER = "corkr03";
-        var CHECKSUM = 47376941857;
+        var CHECKSUM = 46994270246;
     </script>
     
     <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
@@ -226,12 +226,6 @@ Ext.define('Rally.technicalservices.Logger',{
             operatorFieldConfig: {},
             focusPropertyField: false
         },
-        //
-        //constructor: function(config) {
-        //    console.log('config', config);
-        //    this.mergeConfig(config);
-        //    this.callParent([this.config]);
-        //},
 
         isValid: function() {
             return this._hasPropertySelected() && this._hasOperatorSelected() && this._valueFieldIsValid();
