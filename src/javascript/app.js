@@ -325,6 +325,10 @@ Ext.define("user-story-ancestor-grid", {
                         text: 'Export...',
                         handler: this._export,
                         scope: this
+                    },{
+                        text: 'Export Stories and Tasks...',
+                        handler: this._deepExport,
+                        scope: this
                     }
                 ],
                 buttonConfig: {
@@ -389,7 +393,10 @@ Ext.define("user-story-ancestor-grid", {
 
         return deferred;
     },
-    _export: function() {
+    _deepExport: function(){
+        this._export(true);
+    },
+    _export: function(includeTasks) {
 
         var filters = this.getExportFilters();
 
@@ -400,6 +407,9 @@ Ext.define("user-story-ancestor-grid", {
 
         var fetch = _.pluck(additionalFields, 'dataIndex');
         fetch.push('ObjectID');
+        if (includeTasks){
+            fetch.push('Tasks');
+        }
         if (!Ext.Array.contains(fetch, this.getFeatureName())){
             fetch.push(this.getFeatureName());
         }
@@ -415,13 +425,75 @@ Ext.define("user-story-ancestor-grid", {
             scope: this
         }).then({
             success: function(records){
-                var csv = this.getExportCSV(records, columns);
-                var filename = Ext.String.format("export-{0}.csv",Ext.Date.format(new Date(),"Y-m-d-h-i-s"));
-                CArABU.technicalservices.FileUtilities.saveCSVToFile(csv, filename);
+                if (includeTasks){
+                    this._exportTasks(records, fetch, columns);
+                } else {
+                    var csv = this.getExportCSV(records, columns);
+                    var filename = Ext.String.format("export-{0}.csv",Ext.Date.format(new Date(),"Y-m-d-h-i-s"));
+                    CArABU.technicalservices.FileUtilities.saveCSVToFile(csv, filename);
+                }
             },
             failure: this.showErrorNotification,
             scope: this
         }).always(function(){ this.setLoading(false); }, this);
+    },
+    _exportTasks: function(userStories, fetch, columns){
+
+        var oids = [];
+        for (var i=0; i<userStories.length; i++){
+            if (userStories[i].get('Tasks') && userStories[i].get('Tasks').Count){
+                oids.push(userStories[i].get('ObjectID'));
+            }
+        }
+        var filters = Ext.Array.map(oids, function(o){
+            return {
+                property: 'WorkProduct.ObjectID',
+                value: o
+            };
+        });
+        filters = Rally.data.wsapi.Filter.or(filters);
+
+        fetch.push('WorkProduct');
+        this.fetchWsapiRecords({
+            model: 'Task',
+            fetch: fetch,
+            filters: filters,
+            limit: 'Infinity',
+            enablePostGet: true
+        }).then({
+            success: function(tasks){
+                this.logger.log('exportTasks', tasks.length);
+                var taskHash = {};
+                for (var j=0; j<tasks.length; j++){
+                    if (!taskHash[tasks[j].get('WorkProduct').ObjectID]){
+                        taskHash[tasks[j].get('WorkProduct').ObjectID] = [];
+                    }
+                    taskHash[tasks[j].get('WorkProduct').ObjectID].push(tasks[j]);
+                }
+
+                var rows = [];
+                for (var j=0; j<userStories.length; j++){
+                    rows.push(userStories[j]);
+                    var ts = taskHash[userStories[j].get('ObjectID')];
+                    if (ts && ts.length > 0){
+                        rows = rows.concat(ts);
+                    }
+                }
+
+                columns.push({
+                    dataIndex: 'WorkProduct',
+                    text: 'User Story'
+                });
+                var csv = this.getExportCSV(rows, columns);
+                var filename = Ext.String.format("export-{0}.csv",Ext.Date.format(new Date(),"Y-m-d-h-i-s"));
+                CArABU.technicalservices.FileUtilities.saveCSVToFile(csv, filename);
+            },
+            failure: function(msg){
+                var msg = "Unable to export tasks due to error:  " + msg
+                this.showErrorNotification(msg);
+            },
+            scope: this
+        });
     },
     getExportCSV: function(records, columns){
         var standardColumns = _.filter(columns, function(c){ return c.dataIndex || null; }),
@@ -444,7 +516,7 @@ Ext.define("user-story-ancestor-grid", {
             for (var j = 0; j < fetchList.length; j++){
                 var val = record.get(fetchList[j]);
                 if (Ext.isObject(val)){
-                    val = val._refObjectName;
+                    val = val.FormattedID || val._refObjectName;
                 }
                 row.push(val || "");
             }

@@ -8,6 +8,8 @@ App Settings include a query box to filter out user stories.
 
 Grid is exportable into CSV format.  
 
+Export Stories and Tasks... options only exports tasks for the current root stories.  It will not export child user stories and their tasks.
+
 ## Development Notes
 
 ### First Load
