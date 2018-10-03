@@ -1,5 +1,4 @@
 {
-    "name": "User Story Ancestor Grid",
     "sdk": "2.1",
     "className": "user-story-ancestor-grid",
     "server": "https://rally1.rallydev.com"
